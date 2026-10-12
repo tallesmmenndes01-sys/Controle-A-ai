@@ -158,20 +158,21 @@
             
             <div class="form-group">
                 <label>Nome / Descrição</label>
-                <input type="text" id="tName" placeholder="Ex: Açaí iFood, 10 Ovomaltine...">
+                <input type="text" id="tName" placeholder="Ex: Açaí 300ml, Caixa de Uva...">
             </div>
             
             <div class="form-group">
-                <label>Valor Total (R$)</label>
+                <label id="labelValue">Valor Unitário (R$)</label>
                 <input type="number" id="tValue" step="0.01" placeholder="0.00">
+            </div>
+
+            <div class="form-group">
+                <label>Quantidade</label>
+                <input type="number" id="tQty" placeholder="Ex: 2" value="1" min="1">
             </div>
 
             <!-- Aparece apenas se for Gasto -->
             <div id="gastoExtras" style="display: none;">
-                <div class="form-group">
-                    <label>Quantidade comprada (Opcional)</label>
-                    <input type="number" id="tQty" placeholder="Ex: 10" value="1">
-                </div>
                 <div class="checkbox-group">
                     <input type="checkbox" id="tTrack">
                     <label for="tTrack" style="margin:0;">Controlar sobras deste item?</label>
@@ -184,7 +185,7 @@
 
     <script>
         // Banco de dados local
-        let db = JSON.parse(localStorage.getItem('acaiApp_v2')) || {
+        let db = JSON.parse(localStorage.getItem('acaiApp_v3')) || {
             transactions: [],
             sobras: {}, // { "nome_do_item": quantidade }
             history: []
@@ -224,27 +225,33 @@
         // Salvar Transação
         function saveTransaction() {
             const type = document.getElementById('modalType').value;
-            const name = document.getElementById('tName').value;
-            const value = parseFloat(document.getElementById('tValue').value);
+            const name = document.getElementById('tName').value.trim();
+            const unitValue = parseFloat(document.getElementById('tValue').value);
             const qty = parseInt(document.getElementById('tQty').value) || 1;
             const track = document.getElementById('tTrack').checked;
 
-            if (!name || isNaN(value)) { alert("Preencha o nome e o valor!"); return; }
+            if (!name || isNaN(unitValue) || unitValue <= 0) { 
+                alert("Preencha o nome e um valor unitário válido!"); 
+                return; 
+            }
+
+            const totalValue = unitValue * qty;
 
             // Salva a transação financeira
             const transacao = {
                 id: Date.now(),
                 type: type,
-                name: type === 'gasto' ? `${qty}x ${name}` : name,
+                name: qty > 1 ? `${qty}x ${name}` : name,
                 baseName: name, // Nome limpo para o estoque
-                value: value,
-                unitValue: type === 'gasto' ? (value / qty) : value,
+                value: totalValue,
+                unitValue: unitValue,
+                qty: qty,
                 date: new Date().toLocaleDateString('pt-BR')
             };
 
             db.transactions.push(transacao);
 
-            // Adiciona às Sobras se for marcado
+            // Adiciona às Sobras se for Gasto e marcado para rastrear
             if (type === 'gasto' && track) {
                 if (db.sobras[name]) {
                     db.sobras[name] += qty;
@@ -294,7 +301,7 @@
             }
         }
 
-        function salvarDb() { localStorage.setItem('acaiApp_v2', JSON.stringify(db)); }
+        function salvarDb() { localStorage.setItem('acaiApp_v3', JSON.stringify(db)); }
 
         // Renderizar Telas
         function renderData() {
@@ -320,7 +327,7 @@
                     <div class="card">
                         <div class="card-info">
                             <h4>${t.name}</h4>
-                            <p>${t.date} ${!isVenda ? `• Cada: ${formatMoney(t.unitValue)}` : ''}</p>
+                            <p>${t.date} ${t.qty > 1 ? `• Unitário: ${formatMoney(t.unitValue)}` : ''}</p>
                         </div>
                         <div style="text-align: right;">
                             <div class="card-value ${isVenda ? 'val-positive' : 'val-negative'}">
