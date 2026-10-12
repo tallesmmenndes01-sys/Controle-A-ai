@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Açaí - Caixa & Sobras</title>
+    
+    <!-- Configurações para PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#6a1b9a">
+
+    <!-- Ativação do Service Worker -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+      }
+    </script>
+
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6a1b9a;
+            --primary-light: #9c4dcc;
+            --success: #4caf50;
+            --danger: #f44336;
+            --bg: #f5f5f5;
+            --surface: #ffffff;
+            --text: #333333;
+            --text-light: #777777;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background-color: var(--bg); color: var(--text); padding-bottom: 70px; }
+
+        /* Header / Saldo */
+        .header { background: var(--primary); color: white; padding: 20px; border-bottom-left-radius: 20px; border-bottom-right-radius: 20px; text-align: center; }
+        .header h1 { font-size: 1.2rem; font-weight: normal; margin-bottom: 5px; opacity: 0.9; }
+        .balance { font-size: 2.5rem; font-weight: bold; margin-bottom: 10px; }
+        .balance.positive { color: #a5d6a7; }
+        .balance.negative { color: #ef9a9a; }
+        .summary-row { display: flex; justify-content: space-between; margin-top: 15px; font-size: 0.9rem; }
+        .summary-item { background: rgba(255,255,255,0.1); padding: 8px 15px; border-radius: 10px; flex: 1; margin: 0 5px; }
+        .summary-item i { margin-right: 5px; }
+
+        /* Abas / Telas */
+        .screen { display: none; padding: 20px; }
+        .screen.active { display: block; }
+        .section-title { font-size: 1.2rem; margin-bottom: 15px; color: var(--primary); border-bottom: 2px solid #eee; padding-bottom: 5px; }
+
+        /* Botões de Ação Rápida */
+        .action-buttons { display: flex; gap: 10px; margin-bottom: 20px; }
+        .btn { flex: 1; padding: 15px; border: none; border-radius: 15px; color: white; font-size: 1rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .btn-success { background: var(--success); }
+        .btn-danger { background: var(--danger); }
+        .btn-primary { background: var(--primary); }
+
+        /* Listas */
+        .list { display: flex; flex-direction: column; gap: 10px; }
+        .card { background: var(--surface); padding: 15px; border-radius: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .card-info h4 { margin-bottom: 3px; }
+        .card-info p { font-size: 0.8rem; color: var(--text-light); }
+        .card-value { font-weight: bold; font-size: 1.1rem; }
+        .val-positive { color: var(--success); }
+        .val-negative { color: var(--danger); }
+        
+        /* Controles de Sobra (Estoque) */
+        .qty-controls { display: flex; align-items: center; gap: 10px; }
+        .qty-btn { background: #eee; border: none; width: 35px; height: 35px; border-radius: 50%; font-size: 1.2rem; font-weight: bold; color: var(--text); cursor: pointer; }
+        .qty-btn.minus { background: #ffebee; color: var(--danger); }
+        .qty-btn.plus { background: #e8f5e9; color: var(--success); }
+        .qty-display { font-size: 1.2rem; font-weight: bold; min-width: 30px; text-align: center; }
+
+        /* Menu Inferior */
+        .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface); display: flex; justify-content: space-around; padding: 10px 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); border-top-left-radius: 20px; border-top-right-radius: 20px; }
+        .nav-item { background: none; border: none; color: var(--text-light); display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; font-size: 0.8rem; flex: 1; }
+        .nav-item.active { color: var(--primary); font-weight: bold; }
+        .nav-item i { font-size: 1.3rem; }
+
+        /* Modal (Formulários) */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: flex-end; z-index: 100; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: var(--surface); width: 100%; padding: 25px; border-top-left-radius: 25px; border-top-right-radius: 25px; transform: translateY(100%); transition: 0.3s; }
+        .modal-overlay.active .modal { transform: translateY(0); }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-size: 0.9rem; font-weight: bold; color: var(--text-light); }
+        .form-group input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 10px; font-size: 1rem; }
+        .checkbox-group { display: flex; align-items: center; gap: 10px; margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 10px; }
+        .checkbox-group input { width: 20px; height: 20px; }
+        .close-btn { position: absolute; top: 20px; right: 20px; background: none; border: none; font-size: 1.5rem; color: var(--text-light); cursor: pointer; }
+
+        .btn-fechar-mes { width: 100%; padding: 15px; background: var(--text); color: white; border: none; border-radius: 10px; font-weight: bold; margin-top: 20px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <!-- CABEÇALHO -->
+    <div class="header">
+        <h1>Lucro deste Mês</h1>
+        <div class="balance" id="balanceDisplay">R$ 0,00</div>
+        <div class="summary-row">
+            <div class="summary-item"><i class="fas fa-arrow-up"></i> <span id="entradasDisplay">R$ 0,00</span></div>
+            <div class="summary-item"><i class="fas fa-arrow-down"></i> <span id="saidasDisplay">R$ 0,00</span></div>
+        </div>
+    </div>
+
+    <!-- TELA 1: CAIXA (INÍCIO) -->
+    <div id="screen-caixa" class="screen active">
+        <div class="action-buttons">
+            <button class="btn btn-success" onclick="openModal('venda')"><i class="fas fa-plus-circle"></i> Venda</button>
+            <button class="btn btn-danger" onclick="openModal('gasto')"><i class="fas fa-minus-circle"></i> Gasto</button>
+        </div>
+        <h2 class="section-title">Últimas Movimentações</h2>
+        <div class="list" id="transactionsList">
+            <!-- Movimentações aparecem aqui -->
+        </div>
+    </div>
+
+    <!-- TELA 2: SOBRAS (ESTOQUE) -->
+    <div id="screen-sobras" class="screen">
+        <h2 class="section-title">O que tem na loja</h2>
+        <p style="font-size: 0.9rem; color: #777; margin-bottom: 15px;">Atualize a quantidade conforme for gastando. Para adicionar coisas novas aqui, marque a opção "Controlar sobras" ao registrar um Gasto.</p>
+        <div class="list" id="sobrasList">
+            <!-- Estoque aparece aqui -->
+        </div>
+    </div>
+
+    <!-- TELA 3: GASTOS (DESPESAS DETALHADAS) -->
+    <div id="screen-gastos" class="screen">
+        <h2 class="section-title">Histórico de Compras</h2>
+        <div class="list" id="gastosList">
+            <!-- Apenas despesas aparecem aqui -->
+        </div>
+    </div>
+
+    <!-- TELA 4: HISTÓRICO (MESES ANTERIORES) -->
+    <div id="screen-historico" class="screen">
+        <h2 class="section-title">Meses Fechados</h2>
+        <div class="list" id="historyList">
+            <!-- Meses anteriores -->
+        </div>
+        <button class="btn-fechar-mes" onclick="fecharMes()">Encerrar o mês atual e Salvar</button>
+    </div>
+
+    <!-- NAVEGAÇÃO INFERIOR -->
+    <nav class="bottom-nav">
+        <button class="nav-item active" onclick="switchScreen('caixa', this)"><i class="fas fa-wallet"></i> Caixa</button>
+        <button class="nav-item" onclick="switchScreen('sobras', this)"><i class="fas fa-box-open"></i> Sobras</button>
+        <button class="nav-item" onclick="switchScreen('gastos', this)"><i class="fas fa-shopping-cart"></i> Gastos</button>
+        <button class="nav-item" onclick="switchScreen('historico', this)"><i class="fas fa-calendar-check"></i> Histórico</button>
+    </nav>
+
+    <!-- MODAL DE TRANSAÇÃO -->
+    <div class="modal-overlay" id="transactionModal">
+        <div class="modal">
+            <button class="close-btn" onclick="closeModal()">&times;</button>
+            <h2 class="section-title" id="modalTitle">Nova Transação</h2>
+            <input type="hidden" id="modalType">
+            
+            <div class="form-group">
+                <label>Nome / Descrição</label>
+                <input type="text" id="tName" placeholder="Ex: Açaí iFood, 10 Ovomaltine...">
+            </div>
+            
+            <div class="form-group">
+                <label>Valor Total (R$)</label>
+                <input type="number" id="tValue" step="0.01" placeholder="0.00">
+            </div>
+
+            <!-- Aparece apenas se for Gasto -->
+            <div id="gastoExtras" style="display: none;">
+                <div class="form-group">
+                    <label>Quantidade comprada (Opcional)</label>
+                    <input type="number" id="tQty" placeholder="Ex: 10" value="1">
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="tTrack">
+                    <label for="tTrack" style="margin:0;">Controlar sobras deste item?</label>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" style="width: 100%; margin-top: 15px;" onclick="saveTransaction()">Salvar</button>
+        </div>
+    </div>
+
+    <script>
+        // Banco de dados local
+        let db = JSON.parse(localStorage.getItem('acaiApp_v2')) || {
+            transactions: [],
+            sobras: {}, // { "nome_do_item": quantidade }
+            history: []
+        };
+
+        // Trocar de Tela
+        function switchScreen(screenId, btn) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+            document.getElementById('screen-' + screenId).classList.add('active');
+            btn.classList.add('active');
+            renderData();
+        }
+
+        // Modais
+        function openModal(type) {
+            document.getElementById('modalType').value = type;
+            document.getElementById('modalTitle').innerText = type === 'venda' ? '💰 Nova Venda' : '💸 Novo Gasto';
+            document.getElementById('modalTitle').style.color = type === 'venda' ? 'var(--success)' : 'var(--danger)';
+            document.getElementById('gastoExtras').style.display = type === 'gasto' ? 'block' : 'none';
+            
+            document.getElementById('tName').value = '';
+            document.getElementById('tValue').value = '';
+            document.getElementById('tQty').value = '1';
+            document.getElementById('tTrack').checked = false;
+            
+            document.getElementById('transactionModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('transactionModal').classList.remove('active');
+        }
+
+        // Formatar Moeda
+        const formatMoney = (val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+        // Salvar Transação
+        function saveTransaction() {
+            const type = document.getElementById('modalType').value;
+            const name = document.getElementById('tName').value;
+            const value = parseFloat(document.getElementById('tValue').value);
+            const qty = parseInt(document.getElementById('tQty').value) || 1;
+            const track = document.getElementById('tTrack').checked;
+
+            if (!name || isNaN(value)) { alert("Preencha o nome e o valor!"); return; }
+
+            // Salva a transação financeira
+            const transacao = {
+                id: Date.now(),
+                type: type,
+                name: type === 'gasto' ? `${qty}x ${name}` : name,
+                baseName: name, // Nome limpo para o estoque
+                value: value,
+                unitValue: type === 'gasto' ? (value / qty) : value,
+                date: new Date().toLocaleDateString('pt-BR')
+            };
+
+            db.transactions.push(transacao);
+
+            // Adiciona às Sobras se for marcado
+            if (type === 'gasto' && track) {
+                if (db.sobras[name]) {
+                    db.sobras[name] += qty;
+                } else {
+                    db.sobras[name] = qty;
+                }
+            }
+
+            salvarDb();
+            closeModal();
+            renderData();
+        }
+
+        // Atualizar Estoque/Sobras
+        function updateSobra(nome, mudanca) {
+            if (db.sobras[nome] !== undefined) {
+                db.sobras[nome] += mudanca;
+                if (db.sobras[nome] < 0) db.sobras[nome] = 0;
+                salvarDb();
+                renderData();
+            }
+        }
+
+        // Deletar Transação
+        function deleteTransaction(id) {
+            if(confirm("Tem certeza que deseja apagar?")) {
+                db.transactions = db.transactions.filter(t => t.id !== id);
+                salvarDb();
+                renderData();
+            }
+        }
+
+        // Fechar Mês
+        function fecharMes() {
+            if(db.transactions.length === 0) { alert("Não há movimentações para fechar."); return; }
+            if(confirm("Isso vai zerar o caixa atual e salvar o resultado no Histórico. Deseja continuar?")) {
+                const entradas = db.transactions.filter(t => t.type === 'venda').reduce((s, t) => s + t.value, 0);
+                const saidas = db.transactions.filter(t => t.type === 'gasto').reduce((s, t) => s + t.value, 0);
+                const lucro = entradas - saidas;
+                const mesNome = new Date().toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+                
+                db.history.push({ mes: mesNome, lucro: lucro, entradas: entradas, saidas: saidas });
+                db.transactions = []; // Limpa o caixa (não limpa as sobras!)
+                salvarDb();
+                renderData();
+                document.querySelectorAll('.nav-item')[3].click(); // Vai pro histórico
+            }
+        }
+
+        function salvarDb() { localStorage.setItem('acaiApp_v2', JSON.stringify(db)); }
+
+        // Renderizar Telas
+        function renderData() {
+            let totalEntradas = 0;
+            let totalSaidas = 0;
+            
+            const listCaixa = document.getElementById('transactionsList');
+            const listGastos = document.getElementById('gastosList');
+            const listSobras = document.getElementById('sobrasList');
+            const listHistory = document.getElementById('historyList');
+
+            listCaixa.innerHTML = '';
+            listGastos.innerHTML = '';
+            listSobras.innerHTML = '';
+            listHistory.innerHTML = '';
+
+            // Renderizar Transações e Gastos
+            [...db.transactions].reverse().forEach(t => {
+                const isVenda = t.type === 'venda';
+                if(isVenda) totalEntradas += t.value; else totalSaidas += t.value;
+
+                const cardHTML = `
+                    <div class="card">
+                        <div class="card-info">
+                            <h4>${t.name}</h4>
+                            <p>${t.date} ${!isVenda ? `• Cada: ${formatMoney(t.unitValue)}` : ''}</p>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="card-value ${isVenda ? 'val-positive' : 'val-negative'}">
+                                ${isVenda ? '+' : '-'} ${formatMoney(t.value)}
+                            </div>
+                            <button style="background:none; border:none; color:var(--text-light); margin-top:5px; cursor:pointer;" onclick="deleteTransaction(${t.id})"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                `;
+                
+                listCaixa.innerHTML += cardHTML;
+                if(!isVenda) listGastos.innerHTML += cardHTML;
+            });
+
+            if(listCaixa.innerHTML === '') listCaixa.innerHTML = '<p style="text-align:center; color:#999; margin-top:20px;">Nenhuma movimentação ainda.</p>';
+            if(listGastos.innerHTML === '') listGastos.innerHTML = '<p style="text-align:center; color:#999; margin-top:20px;">Nenhum gasto registrado.</p>';
+
+            // Renderizar Header (Saldo)
+            const lucro = totalEntradas - totalSaidas;
+            const balDisplay = document.getElementById('balanceDisplay');
+            balDisplay.innerText = formatMoney(lucro);
+            balDisplay.className = 'balance ' + (lucro >= 0 ? 'positive' : 'negative');
+            document.getElementById('entradasDisplay').innerText = formatMoney(totalEntradas);
+            document.getElementById('saidasDisplay').innerText = formatMoney(totalSaidas);
+
+            // Renderizar Sobras (Estoque)
+            const sobrasKeys = Object.keys(db.sobras);
+            if(sobrasKeys.length === 0) {
+                listSobras.innerHTML = '<p style="text-align:center; color:#999; margin-top:20px;">Nenhum item salvo nas sobras.</p>';
+            } else {
+                sobrasKeys.forEach(nome => {
+                    const qty = db.sobras[nome];
+                    listSobras.innerHTML += `
+                        <div class="card">
+                            <div class="card-info">
+                                <h4>${nome}</h4>
+                            </div>
+                            <div class="qty-controls">
+                                <button class="qty-btn minus" onclick="updateSobra('${nome}', -1)">-</button>
+                                <div class="qty-display">${qty}</div>
+                                <button class="qty-btn plus" onclick="updateSobra('${nome}', 1)">+</button>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            // Renderizar Histórico
+            if(db.history.length === 0) {
+                listHistory.innerHTML = '<p style="text-align:center; color:#999; margin-top:20px;">Nenhum mês fechado.</p>';
+            } else {
+                [...db.history].reverse().forEach(h => {
+                    listHistory.innerHTML += `
+                        <div class="card" style="border-left: 5px solid ${h.lucro >= 0 ? 'var(--success)' : 'var(--danger)'}">
+                            <div class="card-info">
+                                <h4>${h.mes}</h4>
+                                <p>Entrou: ${formatMoney(h.entradas)} | Saiu: ${formatMoney(h.saidas)}</p>
+                            </div>
+                            <div class="card-value ${h.lucro >= 0 ? 'val-positive' : 'val-negative'}">
+                                ${formatMoney(h.lucro)}
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+        }
+
+        // Iniciar
+        renderData();
+    </script>
+</body>
+</html>
